@@ -1,0 +1,240 @@
+* TheoryTestPro API for driving schools
+
+** Registering OAuth application
+
+Each 3rd party application that needs access to the ADI data through
+the TheoryTestPro has to be registered through the admin interface. To
+register application we need to know a valid redirect ~https~ url on
+the 3rd party side. Redirect url is used to notify 3rd party about the
+state of the authorization flow. We have to pre-register redirect url
+to prevent potential spoofing that will cause redirect to untrusted
+URLs.
+
+Each created application will get a unique client ID and a secret. We
+assume that each 3rd party app is confidential and client secret will
+be treated as a private information. It is not recommended to use
+token in single page browser applications and native apps since it can
+be easily recovered.
+
+** Authorising with the driving school
+
+This API uses standard OAuth2 authorisation flow for requesting
+authorisation from the driving school. To get access token each
+application needs authorisation from the driving school to access
+their data. Once authorisation is granted it's possible to get access
+token for the API, each token is valid for _2 weeks_, expiration date
+can be extended without re-authosation using refresh token provided
+along with the access token. Example of the authorization flow is
+provided below.
+   
+** Accessing driving school data
+
+Examples below use client token
+~nPir4QXHUbNLk_P8TE_JVLwUdtEUVPyCl1R7CxkNJB4~, client secret
+~m8QgU_du664YueE6mmYpedaZtBwA8lwkWqkwElmh6SE~, redirect url
+~https://localhost:3000~.
+
+*** Requesting authorisation code
+
+To request authorisation from the driving school please redirect
+instructor to the following url:
+
+[[https://app.theorytestpro.co.uk/oauth/authorize?client_id=o_Cv-iRADgBA5SziiNoams0ns12dHVghGf24a5TWsWc&redirect_uri=https://localhost:3000&response_type=code&scope=read]]
+
+This url will present authorisation request dialog with information
+about 3rd party and data that will be accessible. Accessible data is
+controlled through the oauth scopes. The following scopes are
+available:
+
+- ~read~ gives access to the student details and learning progress
+in read only mode.
+
+If instructor will not authorise your request you will receive the
+following ~GET~ request:
+
+[[https://localhost:3000/?error=access_denied&error_description=The+resource+owner+or+authorization+server+denied+the+request.]]
+
+If instructor will authorise your request you will receive
+authorisation code through the following ~GET~ request:
+
+[[https://localhost:3000/?code=xPDjt3AZFSYGcfSr5tBd3jts2GGbREneODGDfiQgXtg]]
+
+*** Exchanging authorisation code for the access token
+
+To exchange authosation code for the access token you have to issue
+the following ~POST~ request:
+
+#+BEGIN_SRC sh
+curl -X POST "https://app.theorytestpro.co.uk/oauth/token?\
+grant_type=authorization_code\
+&client_id=nPir4QXHUbNLk_P8TE_JVLwUdtEUVPyCl1R7CxkNJB4\
+&client_secret=m8QgU_du664YueE6mmYpedaZtBwA8lwkWqkwElmh6SE\
+&code=xPDjt3AZFSYGcfSr5tBd3jts2GGbREneODGDfiQgXtg\
+&redirect_uri=https://localhost:3000"
+#+END_SRC
+
+Our server will respond with ~json~ object containing ~error~ or
+~access_token~:
+
+#+BEGIN_SRC js
+{
+  "access_token": "Un5E_VZu8rI_ldxigibweB8s_WFzKzs1p2jXiM2zulY",
+  "token_type": "Bearer",
+  "expires_in": 1209600,
+  "refresh_token": "j5eAAbtG5cXHn0fahJicua62Nn4oy1H-blTgPMF0F0k",
+  "scope": "read",
+  "created_at": 1625437979
+}
+#+END_SRC
+
+*** Extending access_token expiration date
+
+Along with the token you will also receive ~expires_in~ duration and a
+~refresh_token~. You can use ~refresh_token~ to extend your
+~access_token~ by issuing the following request:
+
+#+BEGIN_SRC sh
+curl -X POST "https://app.theorytestpro.co.uk/oauth/token?\
+grant_type=refresh_token\
+&client_id=nPir4QXHUbNLk_P8TE_JVLwUdtEUVPyCl1R7CxkNJB4\
+&client_secret=m8QgU_du664YueE6mmYpedaZtBwA8lwkWqkwElmh6SE\
+&refresh_token=j5eAAbtG5cXHn0fahJicua62Nn4oy1H-blTgPMF0F0k"
+#+END_SRC
+
+Successful response for the above request will be similar to the
+requesting access token:
+
+#+BEGIN_SRC js
+{
+  "access_token": "-cP6-cAo0Gq_U3i8zzt4KrvdMyryvletvDRr5pmEvmY",
+  "token_type": "Bearer",
+  "expires_in": 1209600,
+  "refresh_token": "3ZvijNaX-gRpvtHC3JeERhzQn8zVmFkhGSfcT8F871o",
+  "scope": "read",
+  "created_at": 1625438426
+}
+#+END_SRC
+
+You can refresh tokens as often as you need. If you will not refresh
+in time you will need to go through the authorisation flow again.
+
+*** Requesting from API
+
+You can request data from the API using ~access_token~ you
+received. Driving school API uses ~/api/v2/driving_school~ namespace
+for all endpoints. The following endpoints are available:
+
+**** GET /students
+
+This endpoint returns data about all students registered with the
+driving school. The endpoint uses pagination using ~page~ (zero based)
+and ~per_page~ parameters. By default ~per_page~ is equal ~30~ and
+maximum value is ~100~. Returned values can be scoped by the acces
+level using ~full_access~ parameter:
+
+- if value is ~true~ only students with full access will be included.
+- if value is ~false~ only students with limited access will be
+  included.
+- if parameter is omitted then all students will be returned.
+
+#+BEGIN_SRC sh
+curl -H "Authorization: Bearer -cP6-cAo0Gq_U3i8zzt4KrvdMyryvletvDRr5pmEvmY" https://app.theorytestpro.co.uk/api/v2/driving_school/students
+#+END_SRC  
+
+Response contains the following data:
+
+#+BEGIN_SRC js
+{
+  "meta": {
+    "page": 0,
+    "per_page": 30,
+    "total": 1024
+  },
+  "students": [
+    {
+      "email": "26650.anon@example.com",
+      "mobile_phone": "447700900934",
+      "full_access": true,
+      "vehicle_category": "Car",
+      "last_seent_at": "2013-11-12T22:54:04.000Z",
+      "total_study_time": 0,
+      "multiple_choice": {
+        "mastery_score": 0,
+        "average_score": 58,
+        "total_questions": 757
+      },
+      "hazard_perception": {
+        "mastery_score": 24,
+        "average_score": 85,
+        "total_clips": 73
+      },
+      "profile_url": "https://app.theorytestpro.co.uk/driving_school/students/123456"
+    }
+  ]
+}
+#+END_SRC
+
+In the above:
+
+- ~meta~ block contains information about current ~page~ number,
+  amount of records ~per_page~ and ~total~ count of students
+  registered with the school. You can use these information to
+  paginate through all records.
+
+- ~students~ block contains basic student data: ~email~,
+  ~mobile_phone~ (if available), whether student has ~full_access~ to
+  question bank, currently selected ~vehicle_category~, date of last
+  login (~last_seen_at~) and a ~total_study_time~ (seconds).
+
+- ~multiple_choice~ block contains learning progress for multiple
+  choice questions. ~mastery_score~ contains count of mastered
+  questions, ~total_questions~ shows amount of questions in our
+  question bank and ~average_score~ is calculated across last 10
+  quizzes.
+
+- ~hazard_perception~ block contains learning progress for hazard
+  perception clips. ~mastery_score~ contains count of mastered clips,
+  ~total_cilps~ shows amount of clips in our question bank and
+  ~average_score~ is calculated across last 28 attempts.
+
+- ~profile_url~ url for the student's profile page on the driving
+  school dashboard.
+
+**** GET /students/search
+
+This endpoint returns data about particular student registered with
+the driving school. The endpoint uses expects a single ~q~ query
+string parameter that should contain ~email~ or
+~mobile_phone~. Partial matches are not supported. Successful
+responses will return a single ~student~ object, otherwise ~404~
+status code will be returned.
+
+#+BEGIN_SRC sh
+curl -H "Authorization: Bearer -cP6-cAo0Gq_U3i8zzt4KrvdMyryvletvDRr5pmEvmY" https://app.theorytestpro.co.uk/api/v2/driving_school/students/search/?q=447700900934
+#+END_SRC
+
+Response contains the following data:
+
+#+BEGIN_SRC js
+{
+  "student": {
+    "email": "26650.anon@example.com",
+    "mobile_phone": "447700900934",
+    "full_access": true,
+    "vehicle_category": "Car",
+    "last_seent_at": "2013-11-12T22:54:04.000Z",
+    "total_study_time": 0,
+    "multiple_choice": {
+      "mastery_score": 0,
+      "average_score": 58,
+      "total_questions": 757
+    },
+    "hazard_perception": {
+      "mastery_score": 24,
+      "average_score": 85,
+      "total_clips": 73
+    },
+    "profile_url": "https://app.theorytestpro.co.uk/driving_school/students/123456"
+  }
+}
+#+END_SRC
